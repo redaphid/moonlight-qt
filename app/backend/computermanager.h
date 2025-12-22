@@ -17,8 +17,34 @@
 #include <QTimer>
 #include <QMutex>
 #include <QWaitCondition>
+#include <QNetworkAccessManager>
 
 class ComputerManager;
+class NvComputer;
+
+// Forward declare for ComputerPollingEntry
+class PcMonitorThread : public QThread
+{
+    Q_OBJECT
+
+public:
+    explicit PcMonitorThread(NvComputer* computer);
+    void interrupt();
+
+protected:
+    void run() override;
+
+signals:
+    void computerStateChanged(NvComputer* computer);
+
+private:
+    bool tryPollComputer(QNetworkAccessManager* nam, class NvAddress address, bool& changed);
+    bool updateAppList(QNetworkAccessManager* nam, bool& changed);
+
+    NvComputer* m_Computer;
+    QMutex m_WaitMutex;
+    QWaitCondition m_WaitCondition;
+};
 
 class DelayedFlushThread : public QThread
 {
@@ -177,8 +203,9 @@ public:
         cleanInactiveList();
 
         if (m_ActiveThread != nullptr) {
-            // Interrupt the active thread
-            m_ActiveThread->requestInterruption();
+            // Interrupt the active thread using its interrupt() method
+            // which will wake it from the wait condition
+            static_cast<PcMonitorThread*>(m_ActiveThread)->interrupt();
 
             // Place it on the inactive list awaiting death
             m_InactiveList.append(m_ActiveThread);
