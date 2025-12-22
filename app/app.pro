@@ -206,6 +206,7 @@ SOURCES += \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
     path.cpp \
+    networkutils.cpp \
     settings/mappingmanager.cpp \
     gui/sdlgamepadkeynavigation.cpp \
     streaming/video/overlaymanager.cpp \
@@ -220,6 +221,7 @@ HEADERS += \
     settings/compatfetcher.h \
     settings/mappingfetcher.h \
     utils.h \
+    networkutils.h \
     backend/computerseeker.h \
     backend/identitymanager.h \
     backend/nvcomputer.h \

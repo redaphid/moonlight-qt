@@ -1,8 +1,30 @@
 *pro.user
 
+# Qt/qmake build artifacts
+.qmake.cache
+.qmake.stash
+Makefile
+Makefile.Debug
+Makefile.Release
+config.log
+qml_qmlcache.qrc
 
+# Build directories
+release/
+debug/
 **/.vs/
 .vscode/
 build/
+
+# Static libraries
+*.a
+
+# macOS app bundles
+*.app/
+
+# Backup files
+*-e
+
+# Config test artifacts
 config.tests/*/.qmake.stash
 config.tests/*/Makefile
