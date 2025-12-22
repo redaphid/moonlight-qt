@@ -111,9 +111,10 @@ int Pacer::vsyncThread(void *context)
     bool async = me->m_VsyncSource->isAsync();
     while (!me->m_Stopping) {
         if (async) {
-            // Wait for the VSync source to invoke signalVsync() or 100ms to elapse
+            // Wait for the VSync source to invoke signalVsync() or timeout to elapse
+            // Reduced from 100ms to 20ms for lower frame presentation latency
             me->m_FrameQueueLock.lock();
-            me->m_VsyncSignalled.wait(&me->m_FrameQueueLock, 100);
+            me->m_VsyncSignalled.wait(&me->m_FrameQueueLock, 20);
             me->m_FrameQueueLock.unlock();
         }
         else {

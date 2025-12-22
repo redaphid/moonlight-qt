@@ -1972,7 +1972,8 @@ void Session::exec()
         // NB: This behavior was introduced in SDL 2.0.16, but had a few critical
         // issues that could cause indefinite timeouts, delayed joystick detection,
         // and other problems.
-        if (!SDL_WaitEventTimeout(&event, 1000)) {
+        // Reduced timeout from 1000ms to 100ms to minimize input latency
+        if (!SDL_WaitEventTimeout(&event, 100)) {
             presence.runCallbacks();
             continue;
         }

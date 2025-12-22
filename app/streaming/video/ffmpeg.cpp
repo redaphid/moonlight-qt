@@ -221,7 +221,9 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(bool testOnly)
     : m_Pkt(av_packet_alloc()),
       m_VideoDecoderCtx(nullptr),
       m_RequiredPixelFormat(AV_PIX_FMT_NONE),
-      m_DecodeBuffer(1024 * 1024, 0),
+      // Pre-allocate 4MB to avoid reallocation during streaming
+      // (covers even worst-case 4K/8K I-frames at high bitrate)
+      m_DecodeBuffer(4 * 1024 * 1024, 0),
       m_HwDecodeCfg(nullptr),
       m_BackendRenderer(nullptr),
       m_FrontendRenderer(nullptr),
@@ -1789,7 +1791,8 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     }
                     else {
                         // No output data or input data. Let's wait a little bit.
-                        SDL_Delay(2);
+                        // Reduced from 2ms to 1ms for lower latency
+                        SDL_Delay(1);
                     }
                 }
                 else {

@@ -79,10 +79,14 @@ void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
         return;
     }
 
-    // Batch all pending mouse motion events to save CPU time
+    // Batch pending mouse motion events to save CPU time
+    // Limited to 10 events to prevent one slow event from delaying all prior movements
     Sint32 x = event->x, y = event->y, xrel = event->xrel, yrel = event->yrel;
     SDL_Event nextEvent;
-    while (SDL_PeepEvents(&nextEvent, 1, SDL_GETEVENT, SDL_MOUSEMOTION, SDL_MOUSEMOTION) > 0) {
+    int batchedEvents = 0;
+    const int MAX_BATCHED_MOUSE_EVENTS = 10;
+    while (batchedEvents < MAX_BATCHED_MOUSE_EVENTS &&
+           SDL_PeepEvents(&nextEvent, 1, SDL_GETEVENT, SDL_MOUSEMOTION, SDL_MOUSEMOTION) > 0) {
         event = &nextEvent.motion;
 
         // Ignore synthetic mouse events
@@ -91,6 +95,7 @@ void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
             y = event->y;
             xrel += event->xrel;
             yrel += event->yrel;
+            batchedEvents++;
         }
     }
 
