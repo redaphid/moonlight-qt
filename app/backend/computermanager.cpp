@@ -36,7 +36,8 @@ private:
         QString serverInfo;
         try {
             serverInfo = http.getServerInfo(NvHTTP::NvLogLevel::NVLL_NONE, true);
-        } catch (...) {
+        } catch (const std::exception& e) {
+            qWarning() << "Failed to poll" << m_Computer->name << ":" << e.what();
             return false;
         }
 
@@ -63,7 +64,8 @@ private:
             if (appList.isEmpty()) {
                 return false;
             }
-        } catch (...) {
+        } catch (const std::exception& e) {
+            qWarning() << "Failed to update app list for" << m_Computer->name << ":" << e.what();
             return false;
         }
 
