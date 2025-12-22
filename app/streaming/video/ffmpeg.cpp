@@ -1790,9 +1790,10 @@ void FFmpegVideoDecoder::decoderThreadProc()
                         LiCompleteVideoFrame(handle, submitDecodeUnit(du));
                     }
                     else {
-                        // No output data or input data. Let's wait a little bit.
-                        // Reduced from 2ms to 1ms for lower latency
-                        SDL_Delay(1);
+                        // No output data or input data. Use event-driven wait instead of polling.
+                        // Wait for frame arrival signal with safety timeout to prevent hangs.
+                        QMutexLocker lock(&m_FrameAvailableMutex);
+                        m_FrameAvailable.wait(&m_FrameAvailableMutex, 50);  // 50ms timeout for safety
                     }
                 }
                 else {
@@ -1950,6 +1951,9 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     }
 
     m_FrameInfoQueue.enqueue(*du);
+
+    // Signal decoder thread that a frame is available (event-driven wake)
+    m_FrameAvailable.wakeOne();
 
     m_FramesIn++;
     return DR_OK;
