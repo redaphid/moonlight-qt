@@ -6,3 +6,30 @@
 build/
 config.tests/*/.qmake.stash
 config.tests/*/Makefile
+
+# qmake build artifacts
+.qmake.cache
+.qmake.stash
+Makefile
+Makefile.Debug
+Makefile.Release
+config.log
+
+# Build outputs
+**/release/
+**/debug/
+*.app/
+*.o
+*.a
+moc_*.cpp
+qrc_*.cpp
+*_qmlcache.qrc
+
+# Generated files
+Info.plist-e
+
+# Test binaries
+app/tests/
+
+# Libraries (if locally built)
+libs/

@@ -1953,7 +1953,11 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     m_FrameInfoQueue.enqueue(*du);
 
     // Signal decoder thread that a frame is available (event-driven wake)
-    m_FrameAvailable.wakeOne();
+    // Must hold mutex when signaling to prevent race conditions
+    {
+        QMutexLocker lock(&m_FrameAvailableMutex);
+        m_FrameAvailable.wakeOne();
+    }
 
     m_FramesIn++;
     return DR_OK;
