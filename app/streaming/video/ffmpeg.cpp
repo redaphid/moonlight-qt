@@ -221,7 +221,9 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(bool testOnly)
     : m_Pkt(av_packet_alloc()),
       m_VideoDecoderCtx(nullptr),
       m_RequiredPixelFormat(AV_PIX_FMT_NONE),
-      m_DecodeBuffer(1024 * 1024, 0),
+      // Pre-allocate 4MB to avoid reallocation during streaming
+      // (covers even worst-case 4K/8K I-frames at high bitrate)
+      m_DecodeBuffer(4 * 1024 * 1024, 0),
       m_HwDecodeCfg(nullptr),
       m_BackendRenderer(nullptr),
       m_FrontendRenderer(nullptr),
@@ -1788,8 +1790,10 @@ void FFmpegVideoDecoder::decoderThreadProc()
                         LiCompleteVideoFrame(handle, submitDecodeUnit(du));
                     }
                     else {
-                        // No output data or input data. Let's wait a little bit.
-                        SDL_Delay(2);
+                        // No output data or input data. Use event-driven wait instead of polling.
+                        // Wait for frame arrival signal with safety timeout to prevent hangs.
+                        QMutexLocker lock(&m_FrameAvailableMutex);
+                        m_FrameAvailable.wait(&m_FrameAvailableMutex, 50);  // 50ms timeout for safety
                     }
                 }
                 else {
@@ -1947,6 +1951,13 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     }
 
     m_FrameInfoQueue.enqueue(*du);
+
+    // Signal decoder thread that a frame is available (event-driven wake)
+    // Must hold mutex when signaling to prevent race conditions
+    {
+        QMutexLocker lock(&m_FrameAvailableMutex);
+        m_FrameAvailable.wakeOne();
+    }
 
     m_FramesIn++;
     return DR_OK;

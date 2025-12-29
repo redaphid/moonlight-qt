@@ -117,6 +117,10 @@ private:
     SDL_Thread* m_DecoderThread;
     SDL_atomic_t m_DecoderThreadShouldQuit;
 
+    // Event-driven frame availability signaling
+    QMutex m_FrameAvailableMutex;
+    QWaitCondition m_FrameAvailable;
+
     // Data buffers in the queued DU are not valid
     QQueue<DECODE_UNIT> m_FrameInfoQueue;
 

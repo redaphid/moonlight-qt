@@ -111,9 +111,13 @@ int Pacer::vsyncThread(void *context)
     bool async = me->m_VsyncSource->isAsync();
     while (!me->m_Stopping) {
         if (async) {
-            // Wait for the VSync source to invoke signalVsync() or 100ms to elapse
+            // Event-driven VSync: Wait indefinitely for signal with hang detection
             me->m_FrameQueueLock.lock();
-            me->m_VsyncSignalled.wait(&me->m_FrameQueueLock, 100);
+            if (!me->m_VsyncSignalled.wait(&me->m_FrameQueueLock, 1000)) {
+                // No VSync signal for 1 second - possible hang or display sleep
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                           "VSync timeout after 1000ms - display may be sleeping");
+            }
             me->m_FrameQueueLock.unlock();
         }
         else {

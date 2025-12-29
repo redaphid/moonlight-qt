@@ -1990,7 +1990,10 @@ void Session::exec()
         // NB: This behavior was introduced in SDL 2.0.16, but had a few critical
         // issues that could cause indefinite timeouts, delayed joystick detection,
         // and other problems.
-        if (!SDL_WaitEventTimeout(&event, 1000)) {
+        // Use 100ms timeout: Short enough for responsive presence callbacks, long enough
+        // that actual input events (which wake immediately) dominate. Most wake-ups will
+        // be event-driven rather than timeout-driven during active streaming.
+        if (!SDL_WaitEventTimeout(&event, 100)) {
             presence.runCallbacks();
             continue;
         }
