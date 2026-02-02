@@ -4,6 +4,7 @@ import QtQuick.Window 2.2
 
 import SdlGamepadKeyNavigation 1.0
 import Session 1.0
+import SystemProperties 1.0
 
 Item {
     property Session session
@@ -67,20 +68,16 @@ Item {
         // Re-enable GUI gamepad usage now
         SdlGamepadKeyNavigation.enable()
 
-        if (quitAfter) {
-            if (streamSegueErrorDialog.text) {
-                // Quit when the error dialog is acknowledged
-                streamSegueErrorDialog.quitAfter = quitAfter
-                streamSegueErrorDialog.open()
-            }
-            else {
-                // Quit immediately
-                Qt.quit()
-            }
-        } else {
-            // Exit this view
+        // Pop the StreamSegue off the stack if this is a GUI-based app launch
+        if (!quitAfter) {
             stackView.pop()
+        }
 
+        if (quitAfter && !streamSegueErrorDialog.text) {
+            // If this was a CLI launch without errors, exit now
+            Qt.quit()
+        }
+        else {
             // Show the Qt window again after streaming
             window.visible = true
 
@@ -123,6 +120,10 @@ Item {
         session.quitStarting.connect(quitStarting)
         session.sessionFinished.connect(sessionFinished)
         session.readyForDeletion.connect(sessionReadyForDeletion)
+
+        // Ensure the SystemProperties async thread is finished,
+        // since it may currently be using the SDL video subsystem
+        SystemProperties.waitForAsyncLoad()
 
         // Kick off the stream
         spinnerTimer.start()

@@ -22,19 +22,6 @@
 #define ICON_SIZE 64
 #endif
 
-// HACK: Remove once proper Dark Mode support lands in SDL
-#ifdef Q_OS_WIN32
-#include <SDL_syswm.h>
-#include <dwmapi.h>
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE_OLD
-#define DWMWA_USE_IMMERSIVE_DARK_MODE_OLD 19
-#endif
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
-#endif
-
-
 #define SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER 100
 #define SDL_CODE_GAMECONTROLLER_RUMBLE 101
 #define SDL_CODE_GAMECONTROLLER_RUMBLE_TRIGGERS 102
@@ -533,28 +520,22 @@ bool Session::populateDecoderProperties(SDL_Window* window)
         m_VideoCallbacks.submitDecodeUnit = drSubmitDecodeUnit;
     }
 
-    {
-        bool ok;
+    if (Utils::getEnvironmentVariableOverride("COLOR_SPACE_OVERRIDE", &m_StreamConfig.colorSpace)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Using colorspace override: %d",
+                    m_StreamConfig.colorSpace);
+    }
+    else {
+        m_StreamConfig.colorSpace = decoder->getDecoderColorspace();
+    }
 
-        m_StreamConfig.colorSpace = qEnvironmentVariableIntValue("COLOR_SPACE_OVERRIDE", &ok);
-        if (ok) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Using colorspace override: %d",
-                        m_StreamConfig.colorSpace);
-        }
-        else {
-            m_StreamConfig.colorSpace = decoder->getDecoderColorspace();
-        }
-
-        m_StreamConfig.colorRange = qEnvironmentVariableIntValue("COLOR_RANGE_OVERRIDE", &ok);
-        if (ok) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Using color range override: %d",
-                        m_StreamConfig.colorRange);
-        }
-        else {
-            m_StreamConfig.colorRange = decoder->getDecoderColorRange();
-        }
+    if (Utils::getEnvironmentVariableOverride("COLOR_RANGE_OVERRIDE", &m_StreamConfig.colorRange)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Using color range override: %d",
+                    m_StreamConfig.colorRange);
+    }
+    else {
+        m_StreamConfig.colorRange = decoder->getDecoderColorRange();
     }
 
     if (decoder->isAlwaysFullScreen()) {
@@ -580,7 +561,7 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_InputHandler(nullptr),
       m_MouseEmulationRefCount(0),
       m_FlushingWindowEventsRef(0),
-      m_ShouldExitAfterQuit(false),
+      m_ShouldExit(false),
       m_AsyncConnectionSuccess(false),
       m_PortTestResults(0),
       m_OpusDecoder(nullptr),
@@ -910,6 +891,14 @@ bool Session::initialize(QQuickWindow* qtWindow)
     switch (m_Preferences->windowMode)
     {
     default:
+        // Normally we'd default to fullscreen desktop when starting in windowed
+        // mode, but in the case of a slow GPU, we want to use real fullscreen
+        // to allow the display to assist with the video scaling work.
+        if (WMUtils::isGpuSlow()) {
+            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
+            break;
+        }
+        // Fall-through
     case StreamingPreferences::WM_FULLSCREEN_DESKTOP:
         // Only use full-screen desktop mode if we're running a desktop environment
         if (WMUtils::isRunningDesktopEnvironment()) {
@@ -1279,8 +1268,7 @@ private:
         // Only quit the running app if our session terminated gracefully
         bool shouldQuit =
                 !m_Session->m_UnexpectedTermination &&
-                (m_Session->m_Preferences->quitAppAfter ||
-                 m_Session->m_ShouldExitAfterQuit);
+                m_Session->m_Preferences->quitAppAfter;
 
         // Notify the UI
         if (shouldQuit) {
@@ -1309,13 +1297,13 @@ private:
             } catch (const QtNetworkReplyException&) {
             }
 
-            // Exit the entire program if requested
-            if (m_Session->m_ShouldExitAfterQuit) {
-                QCoreApplication::instance()->quit();
-            }
-
             // Session is finished now
             emit m_Session->sessionFinished(m_Session->m_PortTestResults);
+        }
+
+        // Exit the entire program if requested
+        if (m_Session->m_ShouldExit) {
+            QCoreApplication::instance()->quit();
         }
     }
 
@@ -1429,19 +1417,32 @@ void Session::updateOptimalWindowDisplayMode()
         return;
     }
 
-    // Start with the native desktop resolution and try to find
-    // the highest refresh rate that our stream FPS evenly divides.
+    // On devices with slow GPUs, we will try to match the display mode
+    // to the video stream to offload the scaling work to the display.
+    //
+    // We also try to match the video resolution if we're using KMSDRM,
+    // because scaling on the display is generally higher quality than
+    // scaling performed by drmModeSetPlane().
+    bool matchVideo;
+    if (!Utils::getEnvironmentVariableOverride("MATCH_DISPLAY_MODE_TO_VIDEO", &matchVideo)) {
+        matchVideo = WMUtils::isGpuSlow() || QString(SDL_GetCurrentVideoDriver()) == "KMSDRM";
+    }
+
     bestMode = desktopMode;
     bestMode.refresh_rate = 0;
-    for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
-        if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
-            if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
+    if (!matchVideo) {
+        // Start with the native desktop resolution and try to find
+        // the highest refresh rate that our stream FPS evenly divides.
+        for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
+            if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
+                if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
                     mode.refresh_rate % m_StreamConfig.fps == 0) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                            "Found display mode with desktop resolution: %dx%dx%d",
-                            mode.w, mode.h, mode.refresh_rate);
-                if (mode.refresh_rate > bestMode.refresh_rate) {
-                    bestMode = mode;
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                "Found display mode with desktop resolution: %dx%dx%d",
+                                mode.w, mode.h, mode.refresh_rate);
+                    if (mode.refresh_rate > bestMode.refresh_rate) {
+                        bestMode = mode;
+                    }
                 }
             }
         }
@@ -1582,7 +1583,7 @@ bool Session::startConnectionAsync()
         // the chosen resolution. Avoid that by disabling SOPS when it
         // is not streaming a supported resolution.
         enableGameOptimizations = false;
-        for (const NvDisplayMode &mode : m_Computer->displayModes) {
+        for (const NvDisplayMode &mode : std::as_const(m_Computer->displayModes)) {
             if (mode.width == m_StreamConfig.width &&
                     mode.height == m_StreamConfig.height) {
                 SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -1619,8 +1620,8 @@ bool Session::startConnectionAsync()
         return false;
     }
 
-    QByteArray hostnameStr = m_Computer->activeAddress.address().toLatin1();
-    QByteArray siAppVersion = m_Computer->appVersion.toLatin1();
+    QByteArray hostnameStr = m_Computer->activeAddress.address().toUtf8();
+    QByteArray siAppVersion = m_Computer->appVersion.toUtf8();
 
     SERVER_INFORMATION hostInfo;
     hostInfo.address = hostnameStr.data();
@@ -1630,7 +1631,7 @@ bool Session::startConnectionAsync()
     // Older GFE versions didn't have this field
     QByteArray siGfeVersion;
     if (!m_Computer->gfeVersion.isEmpty()) {
-        siGfeVersion = m_Computer->gfeVersion.toLatin1();
+        siGfeVersion = m_Computer->gfeVersion.toUtf8();
     }
     if (!siGfeVersion.isEmpty()) {
         hostInfo.serverInfoGfeVersion = siGfeVersion.data();
@@ -1639,7 +1640,7 @@ bool Session::startConnectionAsync()
     // Older GFE and Sunshine versions didn't have this field
     QByteArray rtspSessionUrlStr;
     if (!rtspSessionUrl.isEmpty()) {
-        rtspSessionUrlStr = rtspSessionUrl.toLatin1();
+        rtspSessionUrlStr = rtspSessionUrl.toUtf8();
         hostInfo.rtspSessionUrl = rtspSessionUrlStr.data();
     }
 
@@ -1725,9 +1726,17 @@ void Session::flushWindowEvents()
     SDL_PushEvent(&flushEvent);
 }
 
-void Session::setShouldExitAfterQuit()
+void Session::setShouldExit(bool quitHostApp)
 {
-    m_ShouldExitAfterQuit = true;
+    // If the caller has explicitly asked us to quit the host app,
+    // override whatever the preferences say and do it. If the
+    // caller doesn't override to force quit, let the preferences
+    // dictate what we do.
+    if (quitHostApp) {
+        m_Preferences->quitAppAfter = true;
+    }
+
+    m_ShouldExit = true;
 }
 
 void Session::start()
@@ -1859,38 +1868,6 @@ void Session::exec()
             return;
         }
     }
-
-    // HACK: Remove once proper Dark Mode support lands in SDL
-#ifdef Q_OS_WIN32
-    if (m_QtWindow != nullptr) {
-        BOOL darkModeEnabled;
-
-        // Query whether dark mode is enabled for our Qt window (which tracks the OS dark mode state)
-        if (FAILED(DwmGetWindowAttribute((HWND)m_QtWindow->winId(), DWMWA_USE_IMMERSIVE_DARK_MODE, &darkModeEnabled, sizeof(darkModeEnabled))) &&
-            FAILED(DwmGetWindowAttribute((HWND)m_QtWindow->winId(), DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, &darkModeEnabled, sizeof(darkModeEnabled)))) {
-            darkModeEnabled = FALSE;
-        }
-
-        SDL_SysWMinfo info;
-        SDL_VERSION(&info.version);
-
-        if (SDL_GetWindowWMInfo(m_Window, &info) && info.subsystem == SDL_SYSWM_WINDOWS) {
-            // If dark mode is enabled, propagate that to our SDL window
-            if (darkModeEnabled) {
-                if (FAILED(DwmSetWindowAttribute(info.info.win.window, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkModeEnabled, sizeof(darkModeEnabled)))) {
-                    DwmSetWindowAttribute(info.info.win.window, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, &darkModeEnabled, sizeof(darkModeEnabled));
-                }
-
-                // Toggle non-client rendering off and back on to ensure dark mode takes effect on Windows 10.
-                // DWM doesn't seem to correctly invalidate the non-client area after enabling dark mode.
-                DWMNCRENDERINGPOLICY ncPolicy = DWMNCRP_DISABLED;
-                DwmSetWindowAttribute(info.info.win.window, DWMWA_NCRENDERING_POLICY, &ncPolicy, sizeof(ncPolicy));
-                ncPolicy = DWMNCRP_ENABLED;
-                DwmSetWindowAttribute(info.info.win.window, DWMWA_NCRENDERING_POLICY, &ncPolicy, sizeof(ncPolicy));
-            }
-        }
-    }
-#endif
 
     m_InputHandler->setWindow(m_Window);
 
@@ -2179,7 +2156,6 @@ void Session::exec()
 
             // Fall through
         case SDL_RENDER_DEVICE_RESET:
-        case SDL_RENDER_TARGETS_RESET:
 
             if (event.type != SDL_WINDOWEVENT) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
@@ -2207,10 +2183,9 @@ void Session::exec()
 
             // Now that the old decoder is dead, flush any events it may
             // have queued to reset itself (if this reset was the result
-            // of state loss).
+            // of device loss or an internal error).
             SDL_PumpEvents();
             SDL_FlushEvent(SDL_RENDER_DEVICE_RESET);
-            SDL_FlushEvent(SDL_RENDER_TARGETS_RESET);
 
             {
                 // If the stream exceeds the display refresh rate (plus some slack),

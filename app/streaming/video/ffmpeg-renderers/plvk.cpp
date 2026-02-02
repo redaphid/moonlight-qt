@@ -871,7 +871,7 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
 
         // Recreate the renderer
         SDL_Event event;
-        event.type = SDL_RENDER_TARGETS_RESET;
+        event.type = SDL_RENDER_DEVICE_RESET;
         SDL_PushEvent(&event);
         goto UnmapExit;
     }
@@ -1019,12 +1019,6 @@ int PlVkRenderer::getDecoderCapabilities()
 {
     return CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC |
            CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1;
-}
-
-bool PlVkRenderer::needsTestFrame()
-{
-    // We need a test frame to verify that Vulkan video decoding is working
-    return true;
 }
 
 bool PlVkRenderer::isPixelFormatSupported(int videoFormat, AVPixelFormat pixelFormat)

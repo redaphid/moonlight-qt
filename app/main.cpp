@@ -351,7 +351,7 @@ int SDLCALL signalHandlerThread(void* data)
             if (session != nullptr) {
                 if (sig == SIGTERM) {
                     // If this is a SIGTERM, set the flag to quit
-                    session->setShouldExitAfterQuit();
+                    session->setShouldExit();
                 }
 
                 // Stop the streaming session
@@ -484,7 +484,7 @@ int main(int argc, char *argv[])
     // Force AntiHooking.dll to be statically imported and loaded
     // by ntdll on Win32 platforms by calling a dummy function.
     AntiHookingDummyImport();
-#elif defined(Q_OS_LINUX)
+#elif defined(APP_IMAGE)
     // Force libssl.so to be directly linked to our binary, so
     // linuxdeployqt can find it and include it in our AppImage.
     // QtNetwork will pull it in via dlopen().
@@ -550,9 +550,12 @@ int main(int argc, char *argv[])
 #endif
     }
 
-    if (WMUtils::isRunningNvidiaProprietaryDriverX11() ||
-        !WMUtils::supportsDesktopGLWithEGL() ||
-        qEnvironmentVariableIntValue("FORCE_QT_GLES")) {
+    bool forceGles;
+    if (!Utils::getEnvironmentVariableOverride("FORCE_QT_GLES", &forceGles)) {
+        forceGles = WMUtils::isRunningNvidiaProprietaryDriverX11() ||
+                    !WMUtils::supportsDesktopGLWithEGL();
+    }
+    if (forceGles) {
         // The Nvidia proprietary driver causes Qt to render a black window when using
         // the default Desktop GL profile with EGL. AS a workaround, we default to
         // OpenGL ES when running on Nvidia on X11.
@@ -690,14 +693,6 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
 
-#ifndef STEAM_LINK
-    // Force use of the KMSDRM backend for SDL when using Qt platform plugins
-    // that directly draw to the display without a windowing system.
-    if (QGuiApplication::platformName() == "eglfs" || QGuiApplication::platformName() == "linuxfb") {
-        qputenv("SDL_VIDEODRIVER", "kmsdrm");
-    }
-#endif
-
 #ifdef Q_OS_UNIX
     // Register signal handlers to arbitrate between SDL and Qt.
     // NB: This has to be done after the QGuiApplication is constructed to
@@ -771,15 +766,24 @@ int main(int argc, char *argv[])
 
     // After the QGuiApplication is created, the platform stuff will be initialized
     // and we can set the SDL video driver to match Qt.
-    if (WMUtils::isRunningWayland() && QGuiApplication::platformName() == "xcb") {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Detected XWayland. This will probably break hardware decoding! Try running with QT_QPA_PLATFORM=wayland or switch to X11.");
+    if (QGuiApplication::platformName() == "xcb") {
+        if (WMUtils::isRunningWayland()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Detected XWayland. This will probably break hardware decoding! Try running with QT_QPA_PLATFORM=wayland or switch to X11.");
+        }
         qputenv("SDL_VIDEODRIVER", "x11");
     }
     else if (QGuiApplication::platformName().startsWith("wayland")) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Detected Wayland");
         qputenv("SDL_VIDEODRIVER", "wayland");
     }
+#ifndef STEAM_LINK
+    // Force use of the KMSDRM backend for SDL when using Qt platform plugins
+    // that directly draw to the display without a windowing system.
+    else if (QGuiApplication::platformName() == "eglfs" || QGuiApplication::platformName() == "linuxfb") {
+        qputenv("SDL_VIDEODRIVER", "kmsdrm");
+    }
+#endif
 
 #ifdef STEAM_LINK
     // Qt 5.9 from the Steam Link SDK is not able to load any fonts
@@ -923,6 +927,7 @@ int main(int argc, char *argv[])
 
     if (hasGUI) {
         engine.rootContext()->setContextProperty("initialView", initialView);
+        engine.rootContext()->setContextProperty("runConfigChecks", commandLineParserResult == GlobalCommandLineParser::NormalStartRequested);
 
         // Load the main.qml file
         engine.load(QUrl(QStringLiteral("qrc:/gui/main.qml")));

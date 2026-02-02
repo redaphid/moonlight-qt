@@ -24,15 +24,15 @@ extern "C" {
 
 struct CscParams
 {
-    simd_float3 matrix[3];
-    simd_float3 offsets;
+    simd_half3x3 matrix;
+    simd_half3 offsets;
 };
 
 struct ParamBuffer
 {
     CscParams cscParams;
-    simd_float2 chromaOffset;
-    float bitnessScaleFactor;
+    simd_half2 chromaOffset;
+    simd_half1 bitnessScaleFactor;
 };
 
 struct Vertex
@@ -262,18 +262,14 @@ public:
         getFramePremultipliedCscConstants(frame, cscMatrix, yuvOffsets);
         getFrameChromaCositingOffsets(frame, chromaOffset);
 
-        // Copy the row-major CSC matrix into column-major for Metal
-        for (int i = 0; i < 3; i++) {
-            paramBuffer.cscParams.matrix[i] = simd_make_float3(cscMatrix[0 + i],
-                                                               cscMatrix[3 + i],
-                                                               cscMatrix[6 + i]);
-        }
-
-        paramBuffer.cscParams.offsets = simd_make_float3(yuvOffsets[0],
-                                                         yuvOffsets[1],
-                                                         yuvOffsets[2]);
-        paramBuffer.chromaOffset = simd_make_float2(chromaOffset[0],
-                                                    chromaOffset[1]);
+        paramBuffer.cscParams.matrix = simd_matrix(simd_make_half3(cscMatrix[0], cscMatrix[3], cscMatrix[6]),
+                                                   simd_make_half3(cscMatrix[1], cscMatrix[4], cscMatrix[7]),
+                                                   simd_make_half3(cscMatrix[2], cscMatrix[5], cscMatrix[8]));
+        paramBuffer.cscParams.offsets = simd_make_half3(yuvOffsets[0],
+                                                        yuvOffsets[1],
+                                                        yuvOffsets[2]);
+        paramBuffer.chromaOffset = simd_make_half2(chromaOffset[0],
+                                                   chromaOffset[1]);
 
         // Set the EDR metadata for HDR10 to enable OS tonemapping
         if (frame->color_trc == AVCOL_TRC_SMPTE2084 && m_MasteringDisplayColorVolume != nullptr) {
@@ -662,30 +658,11 @@ public:
             return false;
         }
 
-        m_MetalView = SDL_Metal_CreateView(m_Window);
-        if (!m_MetalView) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "SDL_Metal_CreateView() failed: %s",
-                         SDL_GetError());
-            return false;
-        }
-
-        m_MetalLayer = (CAMetalLayer*)SDL_Metal_GetLayer(m_MetalView);
-
-        // Choose a device
-        m_MetalLayer.device = device;
-
-        // Allow EDR content if we're streaming in a 10-bit format
-        m_MetalLayer.wantsExtendedDynamicRangeContent = !!(params->videoFormat & VIDEO_FORMAT_MASK_10BIT);
-
-        // Allow tearing if V-Sync is off (also requires direct display path)
-        m_MetalLayer.displaySyncEnabled = params->enableVsync;
-
         // Create the Metal texture cache for our CVPixelBuffers
         CFStringRef keys[1] = { kCVMetalTextureUsage };
         NSUInteger values[1] = { MTLTextureUsageShaderRead };
         auto cacheAttributes = CFDictionaryCreate(kCFAllocatorDefault, (const void**)keys, (const void**)values, 1, nullptr, nullptr);
-        err = CVMetalTextureCacheCreate(kCFAllocatorDefault, cacheAttributes, m_MetalLayer.device, nullptr, &m_TextureCache);
+        err = CVMetalTextureCacheCreate(kCFAllocatorDefault, cacheAttributes, device, nullptr, &m_TextureCache);
         CFRelease(cacheAttributes);
 
         if (err != kCVReturnSuccess) {
@@ -697,7 +674,7 @@ public:
 
         // Compile our shaders
         QString shaderSource = QString::fromUtf8(Path::readDataFile("vt_renderer.metal"));
-        m_ShaderLibrary = [m_MetalLayer.device newLibraryWithSource:shaderSource.toNSString() options:nullptr error:nullptr];
+        m_ShaderLibrary = [device newLibraryWithSource:shaderSource.toNSString() options:nullptr error:nullptr];
         if (!m_ShaderLibrary) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                          "Failed to compile shaders");
@@ -705,7 +682,33 @@ public:
         }
 
         // Create a command queue for submission
-        m_CommandQueue = [m_MetalLayer.device newCommandQueue];
+        m_CommandQueue = [device newCommandQueue];
+
+        // Add the Metal view to the window if we're not in test-only mode
+        //
+        // NB: Test-only renderers may be created on a non-main thread, so
+        // we don't want to touch the view hierarchy in that context.
+        if (!params->testOnly) {
+            m_MetalView = SDL_Metal_CreateView(m_Window);
+            if (!m_MetalView) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "SDL_Metal_CreateView() failed: %s",
+                             SDL_GetError());
+                return false;
+            }
+
+            m_MetalLayer = (CAMetalLayer*)SDL_Metal_GetLayer(m_MetalView);
+
+            // Choose a device
+            m_MetalLayer.device = device;
+
+            // Allow EDR content if we're streaming in a 10-bit format
+            m_MetalLayer.wantsExtendedDynamicRangeContent = !!(params->videoFormat & VIDEO_FORMAT_MASK_10BIT);
+
+            // Allow tearing if V-Sync is off (also requires direct display path)
+            m_MetalLayer.displaySyncEnabled = params->enableVsync;
+        }
+
         return true;
     }}
 
@@ -807,15 +810,6 @@ public:
         }
 
         return false;
-    }
-
-    virtual bool needsTestFrame() override
-    {
-        // We used to trust VT to tell us whether decode will work, but
-        // there are cases where it can lie because the hardware technically
-        // can decode the format but VT is unserviceable for some other reason.
-        // Decoding the test frame will tell us for sure whether it will work.
-        return true;
     }
 
     int getDecoderColorspace() override
