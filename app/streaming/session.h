@@ -7,6 +7,7 @@
 #include <opus_multistream.h>
 #include "settings/streamingpreferences.h"
 #include "input/input.h"
+#include "input/midi.h"
 #include "video/decoder.h"
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
@@ -259,6 +260,7 @@ private:
     QQuickWindow* m_QtWindow;
     bool m_UnexpectedTermination;
     SdlInputHandler* m_InputHandler;
+    MidiHandler* m_MidiHandler;
     int m_MouseEmulationRefCount;
     int m_FlushingWindowEventsRef;
     QStringList m_LaunchWarnings;

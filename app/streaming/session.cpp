@@ -559,6 +559,7 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_QtWindow(nullptr),
       m_UnexpectedTermination(true), // Failure prior to streaming is unexpected
       m_InputHandler(nullptr),
+      m_MidiHandler(nullptr),
       m_MouseEmulationRefCount(0),
       m_FlushingWindowEventsRef(0),
       m_ShouldExit(false),
@@ -1950,6 +1951,16 @@ void Session::exec()
     // Toggle the stats overlay if requested by the user
     m_OverlayManager.setOverlayState(Overlay::OverlayDebug, m_Preferences->showPerformanceOverlay);
 
+    // Start MIDI input handler if enabled
+    if (m_Preferences->enableMidi) {
+        m_MidiHandler = new MidiHandler();
+        if (!m_MidiHandler->start()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to start MIDI handler");
+            delete m_MidiHandler;
+            m_MidiHandler = nullptr;
+        }
+    }
+
     // Switch to async logging mode when we enter the SDL loop
     StreamUtils::enterAsyncLoggingMode();
 
@@ -2314,6 +2325,10 @@ DispatchDeferredCleanup:
 
     // Raise any keys that are still down
     m_InputHandler->raiseAllKeys();
+
+    // Stop and destroy the MIDI handler
+    delete m_MidiHandler;
+    m_MidiHandler = nullptr;
 
     // Destroy the input handler now. This must be destroyed
     // before allowwing the UI to continue execution or it could

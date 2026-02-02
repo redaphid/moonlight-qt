@@ -144,6 +144,7 @@ public:
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
+    Q_PROPERTY(bool enableMidi MEMBER enableMidi NOTIFY enableMidiChanged)
     Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
 
     Q_INVOKABLE bool retranslate();
@@ -186,6 +187,7 @@ public:
     WindowMode recommendedFullScreenMode;
     UIDisplayMode uiDisplayMode;
     Language language;
+    bool enableMidi;
     CaptureSysKeysMode captureSysKeysMode;
 
 signals:
@@ -222,6 +224,7 @@ signals:
     void reverseScrollDirectionChanged();
     void swapFaceButtonsChanged();
     void captureSysKeysModeChanged();
+    void enableMidiChanged();
     void keepAwakeChanged();
     void languageChanged();
 
