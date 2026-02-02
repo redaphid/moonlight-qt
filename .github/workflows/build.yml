@@ -44,3 +44,42 @@ jobs:
     uses: ./.github/workflows/build-win-mac.yml
     with:
       ci_version: ${{ needs.setup.outputs.ci_version }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [setup, build-appimage, build-steamlink, build-windows-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          CI_VERSION="${{ needs.setup.outputs.ci_version }}"
+
+          # Flatten artifacts into release directory with clean names
+          for dir in artifacts/Moonlight-*; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            # Skip debug symbol artifacts
+            case "$name" in zDevDbgSyms-*) continue ;; esac
+            for file in "$dir"/*; do
+              [ -f "$file" ] || continue
+              cp "$file" "release/"
+            done
+          done
+
+          ls -la release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release/*
