@@ -1,4 +1,12 @@
-# Moonlight PC
+# Moonlight PC (MIDI Fork)
+
+This is a fork of [Moonlight PC](https://moonlight-stream.org) that adds **MIDI input streaming** support for [Apollo](https://github.com/ClassicOldSong/Apollo) hosts.
+
+When connected to an Apollo host, any MIDI input devices attached to the client machine are captured and streamed to the host in real time. This allows you to use local MIDI controllers (keyboards, drum pads, etc.) with music software running on the remote host. MIDI streaming is enabled by default and can be toggled in the settings.
+
+> **Note:** MIDI streaming requires an [Apollo](https://github.com/ClassicOldSong/Apollo) host. It is not supported with Sunshine or NVIDIA GameStream.
+
+---
 
 [Moonlight PC](https://moonlight-stream.org) is an open source PC client for NVIDIA GameStream and [Sunshine](https://github.com/LizardByte/Sunshine).
 
@@ -20,6 +28,7 @@ You can follow development on our [Discord server](https://moonlight-stream.org/
  - Gamepad support with force feedback and motion controls for up to 16 players
  - Support for both pointer capture (for games) and direct mouse control (for remote desktop)
  - Support for passing system-wide keyboard shortcuts like Alt+Tab to the host
+ - MIDI input device streaming to Apollo hosts
  
 ## Downloads
 - [Windows, macOS, and Steam Link](https://github.com/moonlight-stream/moonlight-qt/releases)
