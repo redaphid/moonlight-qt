@@ -61,18 +61,38 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
+          TAG="${{ github.ref_name }}"
           CI_VERSION="${{ needs.setup.outputs.ci_version }}"
 
-          # Flatten artifacts into release directory with clean names
-          for dir in artifacts/Moonlight-*; do
-            [ -d "$dir" ] || continue
-            name=$(basename "$dir")
-            # Skip debug symbol artifacts
-            case "$name" in zDevDbgSyms-*) continue ;; esac
-            for file in "$dir"/*; do
-              [ -f "$file" ] || continue
-              cp "$file" "release/"
-            done
+          # Zip Windows x64
+          if [ -d "artifacts/Moonlight-Windows-x64-${CI_VERSION}" ]; then
+            cd "artifacts/Moonlight-Windows-x64-${CI_VERSION}"
+            zip -r "../../release/Moonlight-${TAG}-Windows-x64.zip" .
+            cd ../..
+          fi
+
+          # Zip Windows ARM64
+          if [ -d "artifacts/Moonlight-Windows-arm64-${CI_VERSION}" ]; then
+            cd "artifacts/Moonlight-Windows-arm64-${CI_VERSION}"
+            zip -r "../../release/Moonlight-${TAG}-Windows-arm64.zip" .
+            cd ../..
+          fi
+
+          # Zip Steam Link
+          if [ -d "artifacts/Moonlight-SteamLink-${CI_VERSION}" ]; then
+            cd "artifacts/Moonlight-SteamLink-${CI_VERSION}"
+            zip -r "../../release/Moonlight-${TAG}-SteamLink.zip" .
+            cd ../..
+          fi
+
+          # Copy macOS .dmg (already a single file)
+          for f in artifacts/Moonlight-macOS-${CI_VERSION}/*.dmg; do
+            [ -f "$f" ] && cp "$f" "release/Moonlight-${TAG}-macOS.dmg"
+          done
+
+          # Copy Linux AppImage (already a single file)
+          for f in artifacts/Moonlight-LinuxAppImage-${CI_VERSION}/*.AppImage; do
+            [ -f "$f" ] && cp "$f" "release/Moonlight-${TAG}-Linux-x86_64.AppImage"
           done
 
           ls -la release/
