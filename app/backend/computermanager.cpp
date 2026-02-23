@@ -14,22 +14,25 @@
 #define SER_HOSTS "hosts"
 #define SER_HOSTS_BACKUP "hostsbackup"
 
-class PcMonitorThread : public QThread
-{
-    Q_OBJECT
-
 #define TRIES_BEFORE_OFFLINING 2
 #define POLLS_PER_APPLIST_FETCH 10
+#define POLL_INTERVAL_MS 3000
 
-public:
-    PcMonitorThread(NvComputer* computer)
-        : m_Computer(computer)
-    {
-        setObjectName("Polling thread for " + computer->name);
-    }
+PcMonitorThread::PcMonitorThread(NvComputer* computer)
+    : m_Computer(computer)
+{
+    setObjectName("Polling thread for " + computer->name);
+}
 
-private:
-    bool tryPollComputer(QNetworkAccessManager* nam, NvAddress address, bool& changed)
+void PcMonitorThread::interrupt()
+{
+    requestInterruption();
+
+    // Wake the thread if it's sleeping
+    QMutexLocker lock(&m_WaitMutex);
+    m_WaitCondition.wakeOne();
+}
+bool PcMonitorThread::tryPollComputer(QNetworkAccessManager* nam, NvAddress address, bool& changed)
     {
         NvHTTP http(address, 0, m_Computer->serverCert, nam);
 
@@ -52,7 +55,7 @@ private:
         return true;
     }
 
-    bool updateAppList(QNetworkAccessManager* nam, bool& changed)
+bool PcMonitorThread::updateAppList(QNetworkAccessManager* nam, bool& changed)
     {
         NvHTTP http(m_Computer, nam);
 
@@ -72,7 +75,7 @@ private:
         return true;
     }
 
-    void run() override
+void PcMonitorThread::run()
     {
         // Reduce the power and performance impact of our
         // computer status polling while it's running.
@@ -142,21 +145,13 @@ private:
                 emit computerStateChanged(m_Computer);
             }
 
-            // Wait a bit to poll again, but do it in 100 ms chunks
-            // so we can be interrupted reasonably quickly.
-            // FIXME: QWaitCondition would be better.
-            for (int i = 0; i < 30 && !isInterruptionRequested(); i++) {
-                QThread::msleep(100);
+            // Wait for the next poll interval or until interrupted
+            QMutexLocker lock(&m_WaitMutex);
+            if (!isInterruptionRequested()) {
+                m_WaitCondition.wait(&m_WaitMutex, POLL_INTERVAL_MS);
             }
         }
     }
-
-signals:
-   void computerStateChanged(NvComputer* computer);
-
-private:
-    NvComputer* m_Computer;
-};
 
 ComputerManager::ComputerManager(StreamingPreferences* prefs)
     : m_Prefs(prefs),
